@@ -1,0 +1,38 @@
+name: cardslm
+description: "Offline-first flashcard study app."
+publish_to: "none"
+version: 1.0.0-MVP
+
+environment:
+  sdk: ^3.11.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Base de datos local
+  sqflite: ^2.3.3
+  path_provider: ^2.1.4
+
+  # Manejo de estado
+  provider: ^6.1.2
+
+  # Lectura de archivos y CSV
+  file_picker: ^8.1.4
+  csv: ^6.0.0
+
+  # UI interactiva
+  flip_card: ^0.7.0
+  flutter_card_swiper: ^7.0.1
+
+  # Monetización
+  google_mobile_ads: ^5.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
