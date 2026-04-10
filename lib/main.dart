@@ -4,6 +4,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'providers/deck_provider.dart';
 import 'providers/card_provider.dart';
+import 'providers/session_provider.dart';
 import 'views/deck/deck_list_screen.dart';
 
 void main() async {
@@ -24,6 +25,7 @@ class FlashCardApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => DeckProvider()..loadDecks()),
         ChangeNotifierProvider(create: (_) => CardProvider()),
+        ChangeNotifierProvider(create: (_) => SessionProvider()),
       ],
       child: MaterialApp(
         title: 'FlashCards',

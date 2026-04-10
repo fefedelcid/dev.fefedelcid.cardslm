@@ -7,6 +7,7 @@ import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import '../../models/deck.dart';
 import '../../models/card.dart';
 import '../../providers/card_provider.dart';
+import '../../providers/session_provider.dart';
 
 class StudyScreen extends StatefulWidget {
   const StudyScreen({super.key, required this.deck, required this.cards});
@@ -196,6 +197,7 @@ class _StudyScreenState extends State<StudyScreen> {
   ) {
     final card = widget.cards[prevIndex];
     final provider = context.read<CardProvider>();
+    final sessionProvider = context.read<SessionProvider>();
 
     if (direction == CardSwiperDirection.right) {
       setState(() => _hits++);
@@ -205,24 +207,35 @@ class _StudyScreenState extends State<StudyScreen> {
       provider.recordMiss(card);
     }
 
-    if (currentIndex != null) {
-      setState(() => _currentIndex = currentIndex);
-    }
+    // Actualiza progreso visible en CardListScreen
+    sessionProvider.updateProgress(_hits, _misses);
 
+    if (currentIndex != null) setState(() => _currentIndex = currentIndex);
     return true;
   }
 
-  void _onEnd() {
+  void _onEnd() async {
+    final sessionProvider = context.read<SessionProvider>();
+
+    await sessionProvider.completeSession(
+      deckId: widget.deck.id!,
+      hits: _hits,
+      misses: _misses,
+      total: widget.cards.length,
+    );
+
     setState(() => _isFinished = true);
   }
 
   void _restartSession() {
+    final sessionProvider = context.read<SessionProvider>();
+    sessionProvider.startSession(widget.deck.id!);
+
     setState(() {
       _currentIndex = 0;
       _hits = 0;
       _misses = 0;
       _isFinished = false;
-      // Resetear flip de todas las tarjetas al frente
       for (final ctrl in _flipControllers) {
         if (ctrl.state?.isFront == false) ctrl.toggleCard();
       }
@@ -252,7 +265,7 @@ class _CardFace extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.12),
+            color: Colors.black.withValues(alpha: 0.12),
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
@@ -270,7 +283,7 @@ class _CardFace extends StatelessWidget {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: textColor.withOpacity(0.15),
+                  color: textColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(

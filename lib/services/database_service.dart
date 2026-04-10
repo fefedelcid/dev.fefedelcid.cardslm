@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/deck.dart';
 import '../models/card.dart';
+import '../models/study_session.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -28,25 +29,37 @@ class DatabaseService {
 
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
-      CREATE TABLE decks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        created_at TEXT NOT NULL
-      )
-    ''');
+    CREATE TABLE decks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      created_at TEXT NOT NULL
+    )
+  ''');
 
     await db.execute('''
-      CREATE TABLE cards (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        deck_id INTEGER NOT NULL,
-        front TEXT NOT NULL,
-        back TEXT NOT NULL,
-        hits INTEGER NOT NULL DEFAULT 0,
-        misses INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY (deck_id) REFERENCES decks (id) ON DELETE CASCADE
-      )
-    ''');
+    CREATE TABLE cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      deck_id INTEGER NOT NULL,
+      front TEXT NOT NULL,
+      back TEXT NOT NULL,
+      hits INTEGER NOT NULL DEFAULT 0,
+      misses INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (deck_id) REFERENCES decks (id) ON DELETE CASCADE
+    )
+  ''');
+
+    await db.execute('''
+    CREATE TABLE study_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      deck_id INTEGER NOT NULL,
+      hits INTEGER NOT NULL,
+      misses INTEGER NOT NULL,
+      total INTEGER NOT NULL,
+      completed_at TEXT NOT NULL,
+      FOREIGN KEY (deck_id) REFERENCES decks (id) ON DELETE CASCADE
+    )
+  ''');
   }
 
   // ── DECKS ──────────────────────────────────────────────
@@ -165,6 +178,44 @@ class DatabaseService {
       return Sqflite.firstIntValue(result) ?? 0;
     } catch (e) {
       return 0;
+    }
+  }
+
+  // ── STUDY SESSIONS ──────────────────────────────────────────────
+  Future<int> insertSession(StudySession session) async {
+    try {
+      final db = await database;
+      return await db.insert('study_sessions', session.toMap()..remove('id'));
+    } catch (e) {
+      throw Exception('Error al guardar sesión: $e');
+    }
+  }
+
+  Future<List<StudySession>> getSessionsByDeck(int deckId) async {
+    try {
+      final db = await database;
+      final maps = await db.query(
+        'study_sessions',
+        where: 'deck_id = ?',
+        whereArgs: [deckId],
+        orderBy: 'completed_at DESC',
+      );
+      return maps.map(StudySession.fromMap).toList();
+    } catch (e) {
+      throw Exception('Error al obtener sesiones: $e');
+    }
+  }
+
+  Future<bool> hasSessionsForDeck(int deckId) async {
+    try {
+      final db = await database;
+      final result = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM study_sessions WHERE deck_id = ?',
+        [deckId],
+      );
+      return (Sqflite.firstIntValue(result) ?? 0) > 0;
+    } catch (e) {
+      return false;
     }
   }
 }

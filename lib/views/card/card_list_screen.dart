@@ -4,46 +4,85 @@ import 'package:provider/provider.dart';
 import '../../models/deck.dart';
 import '../../models/card.dart';
 import '../../providers/card_provider.dart';
+import '../../providers/session_provider.dart';
 import 'card_form_screen.dart';
 import '../study/study_screen.dart';
+import '../study/leaderboard_screen.dart';
 
-class CardListScreen extends StatelessWidget {
+class CardListScreen extends StatefulWidget {
   const CardListScreen({super.key, required this.deck});
   final Deck deck;
 
   @override
+  State<CardListScreen> createState() => _CardListScreenState();
+}
+
+class _CardListScreenState extends State<CardListScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Verificar si ya hay sesiones guardadas para este deck
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SessionProvider>().checkHasSessions(widget.deck.id!);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cardProvider = context.watch<CardProvider>();
+    final sessionProvider = context.watch<SessionProvider>();
+    final sessionActive = sessionProvider.isSessionActive(widget.deck.id!);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(deck.name),
+        title: Text(widget.deck.name),
         actions: [
-          // Botón importar CSV
-          IconButton(
-            icon: const Icon(Icons.upload_file),
-            tooltip: 'Importar CSV',
-            onPressed: () => _importCsv(context),
-          ),
-          // Botón iniciar estudio (solo si hay cards)
-          if (cardProvider.cards.isNotEmpty)
+          // Leaderboard (solo si hay sesiones finalizadas)
+          if (sessionProvider.hasAnySessions)
             IconButton(
-              icon: const Icon(Icons.school),
-              tooltip: 'Estudiar',
-              onPressed: () => _startStudy(context),
+              icon: const Icon(Icons.leaderboard),
+              tooltip: 'Leaderboard',
+              onPressed: () => _openLeaderboard(context),
             ),
+          // Importar CSV (bloqueado si hay sesión activa)
+          if (!sessionActive)
+            IconButton(
+              icon: const Icon(Icons.upload_file),
+              tooltip: 'Importar CSV',
+              onPressed: () => _importCsv(context),
+            ),
+          // Estudiar / Abandonar sesión
+          if (cardProvider.cards.isNotEmpty)
+            sessionActive
+                ? IconButton(
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    tooltip: 'Abandonar sesión',
+                    color: Colors.red,
+                    onPressed: () => _confirmAbandon(context),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.school),
+                    tooltip: 'Estudiar',
+                    onPressed: () => _startStudy(context),
+                  ),
         ],
       ),
-      body: _buildBody(context, cardProvider),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(context),
-        icon: const Icon(Icons.add),
-        label: const Text('Nueva tarjeta'),
-      ),
+      body: _buildBody(context, cardProvider, sessionActive),
+      floatingActionButton: sessionActive
+          ? null // Sin FAB durante sesión activa
+          : FloatingActionButton.extended(
+              onPressed: () => _openForm(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Nueva tarjeta'),
+            ),
     );
   }
 
-  Widget _buildBody(BuildContext context, CardProvider provider) {
+  Widget _buildBody(
+    BuildContext context,
+    CardProvider provider,
+    bool sessionActive,
+  ) {
     if (provider.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -61,7 +100,7 @@ class CardListScreen extends StatelessWidget {
               onPressed: () {
                 context.read<CardProvider>()
                   ..clearError()
-                  ..loadCards(deck.id!);
+                  ..loadCards(widget.deck.id!);
               },
               child: const Text('Reintentar'),
             ),
@@ -89,16 +128,27 @@ class CardListScreen extends StatelessWidget {
 
     return Column(
       children: [
-        _StudyBanner(
-          count: provider.cards.length,
-          onTap: () => _startStudy(context),
-        ),
+        if (sessionActive)
+          _ActiveSessionBanner(
+            hits: context.watch<SessionProvider>().currentHits,
+            misses: context.watch<SessionProvider>().currentMisses,
+            total: provider.cards.length,
+            onResume: () => _startStudy(context),
+            onAbandon: () => _confirmAbandon(context),
+          )
+        else
+          _StudyBanner(
+            count: provider.cards.length,
+            onTap: () => _startStudy(context),
+          ),
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
             itemCount: provider.cards.length,
-            itemBuilder: (context, index) =>
-                _CardTile(card: provider.cards[index]),
+            itemBuilder: (context, index) => _CardTile(
+              card: provider.cards[index],
+              isLocked: sessionActive, // bloquea edición
+            ),
           ),
         ),
       ],
@@ -109,24 +159,64 @@ class CardListScreen extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CardFormScreen(deckId: deck.id!, card: card),
+        builder: (_) => CardFormScreen(deckId: widget.deck.id!, card: card),
       ),
     );
   }
 
   void _startStudy(BuildContext context) {
     final cards = context.read<CardProvider>().cards;
+    final sessionProvider = context.read<SessionProvider>();
+
+    if (!sessionProvider.isSessionActive(widget.deck.id!)) {
+      sessionProvider.startSession(widget.deck.id!);
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => StudyScreen(deck: deck, cards: cards),
+        builder: (_) => StudyScreen(deck: widget.deck, cards: cards),
       ),
+    );
+  }
+
+  void _confirmAbandon(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Abandonar sesión'),
+        content: const Text(
+          'El progreso de esta sesión se perderá. ¿Deseas abandonar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              context.read<SessionProvider>().abandonSession();
+              Navigator.pop(ctx);
+            },
+            child: const Text('Abandonar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openLeaderboard(BuildContext context) {
+    context.read<SessionProvider>().loadSessions(widget.deck.id!);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => LeaderboardScreen(deck: widget.deck)),
     );
   }
 
   Future<void> _importCsv(BuildContext context) async {
     final provider = context.read<CardProvider>();
-    final count = await provider.importFromCsv(deck.id!);
+    final count = await provider.importFromCsv(widget.deck.id!);
 
     if (!context.mounted) return;
 
@@ -146,7 +236,59 @@ class CardListScreen extends StatelessWidget {
   }
 }
 
-// ── Banner superior con conteo y acceso rápido a estudio ──
+// ── Banner sesión activa ──────────────────────────────
+
+class _ActiveSessionBanner extends StatelessWidget {
+  const _ActiveSessionBanner({
+    required this.hits,
+    required this.misses,
+    required this.total,
+    required this.onResume,
+    required this.onAbandon,
+  });
+  final int hits;
+  final int misses;
+  final int total;
+  final VoidCallback onResume;
+  final VoidCallback onAbandon;
+
+  @override
+  Widget build(BuildContext context) {
+    final reviewed = hits + misses;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: Colors.orange[100],
+      child: Row(
+        children: [
+          const Icon(Icons.play_circle, color: Colors.orange),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Sesión en curso',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange,
+                  ),
+                ),
+                Text(
+                  '$reviewed / $total revisadas · ✅ $hits  ❌ $misses',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          TextButton(onPressed: onResume, child: const Text('Continuar')),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Banner sin sesión activa ──────────────────────────
 
 class _StudyBanner extends StatelessWidget {
   const _StudyBanner({required this.count, required this.onTap});
@@ -183,11 +325,12 @@ class _StudyBanner extends StatelessWidget {
   }
 }
 
-// ── Tile individual de Card ────────────────────────────
+// ── Tile individual ───────────────────────────────────
 
 class _CardTile extends StatelessWidget {
-  const _CardTile({required this.card});
+  const _CardTile({required this.card, required this.isLocked});
   final FlashCard card;
+  final bool isLocked;
 
   @override
   Widget build(BuildContext context) {
@@ -208,15 +351,14 @@ class _CardTile extends StatelessWidget {
             _StatChip(icon: Icons.check, count: card.hits, color: Colors.green),
             const SizedBox(width: 6),
             _StatChip(icon: Icons.close, count: card.misses, color: Colors.red),
-            _CardMenu(card: card),
+            // Menú bloqueado si hay sesión activa
+            if (!isLocked) _CardMenu(card: card),
           ],
         ),
       ),
     );
   }
 }
-
-// ── Chip de aciertos / errores ─────────────────────────
 
 class _StatChip extends StatelessWidget {
   const _StatChip({
@@ -240,8 +382,6 @@ class _StatChip extends StatelessWidget {
     );
   }
 }
-
-// ── Menú contextual (editar / eliminar) ───────────────
 
 class _CardMenu extends StatelessWidget {
   const _CardMenu({required this.card});
@@ -269,7 +409,7 @@ class _CardMenu extends StatelessWidget {
           builder: (_) => CardFormScreen(deckId: card.deckId, card: card),
         ),
       );
-    } else if (value == 'delete') {
+    } else {
       _confirmDelete(context);
     }
   }
