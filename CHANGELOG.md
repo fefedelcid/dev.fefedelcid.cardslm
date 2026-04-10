@@ -1,4 +1,15 @@
-## [1.1.0] QoL Improvements - 9/4/2026
+# Changelog
+
+Todos los cambios importantes de este proyecto serán documentados en este archivo.
+
+El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/),
+y este proyecto adhiere a [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+## [1.1.1] QoL Improvements - 2026-4-9
+
+---
 
 ### Added
 
@@ -26,6 +37,9 @@
   - `card_list_screen.dart`: Bloqueo de edición + banners + leaderboard.
   - `study_screen.dart`: `_onEnd` guarda sesión, `_onSwipe` reporta progreso.
 
+- Changelog:
+  - Se actualizó el formato del `CHANGELOG.md`.
+
 ### Deprecated
 
 - No hay funcionalidades obsoletas.
@@ -38,19 +52,16 @@
 
 - No hay correcciones de errores en esta versión inicial.
 
----
-
-### Próximos Pasos `(V 1.1.0 a 1.2.0)`
+### TODO
 
 - [ ] Arreglar el guardado de sesión `study_screen.dart > _onEnd`: Al salir de la misma, incluso al salir del mazo, el progreso se observa mas no se puede retomar la sesión, sino que ésta se reinicia.
-
+- [ ] Agregar sintaxis LaTeX para tarjetas con ecuaciones matemáticas.
+  - [ ] Agregar funcionalidad para escribir LaTeX sin mucha complicación (ver implementación en `com.bagatrix.mathway`)
 - [ ] Agregar monetización y publicar en PlayStore.
 
+## [1.0.0-MVP] - 2026-4-9
+
 ---
-
-## [1.0.0-MVP] - 9/4/2026
-
-<details> <summary><b>Changelog</b></summary>
 
 Este es un registro oficial del primer punto de control estable del proyecto, marcando la finalización del MVP (Minimum Viable Product). Este estado sirve como base de código estable antes de la implementación de nuevas características como anuncios y mejoras de calidad de vida (QoL).
 
@@ -92,15 +103,3 @@ Este es un registro oficial del primer punto de control estable del proyecto, ma
 ### Fixed
 
 - No hay correcciones de errores en esta versión inicial.
-
----
-
-### Próximos Pasos `(V 1.1.0)`:
-
-- [ ] Implementación de AdMob (Banners y posiblemente Interstitials).
-
-- [x] Mejoras de QoL (ej. búsqueda de mazos, filtros de tarjetas).
-
-- [x] Mejoras menores de UI.
-
-</details>
