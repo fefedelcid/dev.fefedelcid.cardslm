@@ -27,15 +27,41 @@ class _StudyScreenState extends State<StudyScreen> {
   int _misses = 0;
   bool _isFinished = false;
 
+  // Offset de reanudación: las tarjetas ya vistas se omiten en el swiper.
+  // Se calcula una sola vez al montar el widget.
+  int _startOffset = 0;
+
   @override
   void initState() {
     super.initState();
     _swiperController = CardSwiperController();
-    // Un FlipCardController por cada tarjeta para controlar el estado individual
     _flipControllers = List.generate(
       widget.cards.length,
       (_) => FlipCardController(),
     );
+
+    // ← Ejecutar DESPUÉS del primer frame para poder leer el provider
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initSession());
+  }
+
+  /// Reanuda la sesión si existe una activa para este deck,
+  /// o inicia una nueva si no la hay.
+  void _initSession() {
+    if (!mounted) return;
+    final sp = context.read<SessionProvider>();
+
+    if (sp.isSessionActive(widget.deck.id!)) {
+      // ── Reanudar sesión existente ─────────────────────
+      setState(() {
+        _hits = sp.currentHits;
+        _misses = sp.currentMisses;
+        _startOffset = sp.currentIndex;
+        _currentIndex = sp.currentIndex;
+      });
+    } else {
+      // ── Iniciar sesión nueva ──────────────────────────
+      sp.startSession(widget.deck.id!);
+    }
   }
 
   @override
@@ -43,6 +69,9 @@ class _StudyScreenState extends State<StudyScreen> {
     _swiperController.dispose();
     super.dispose();
   }
+
+  // Cantidad de tarjetas restantes a partir del punto de reanudación
+  int get _remainingCount => widget.cards.length - _startOffset;
 
   @override
   Widget build(BuildContext context) {
@@ -67,9 +96,7 @@ class _StudyScreenState extends State<StudyScreen> {
   Widget _buildStudyView(BuildContext context) {
     return Column(
       children: [
-        // Barra de progreso
         _ProgressBar(current: _currentIndex, total: widget.cards.length),
-        // Instrucción
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Text(
@@ -77,14 +104,12 @@ class _StudyScreenState extends State<StudyScreen> {
             style: TextStyle(color: Colors.grey[600], fontSize: 13),
           ),
         ),
-        // Swiper principal
         Expanded(
           child: CardSwiper(
             controller: _swiperController,
-            cardsCount: widget.cards.length,
-            numberOfCardsDisplayed: widget.cards.length >= 3
-                ? 3
-                : widget.cards.length,
+            // ← Solo las tarjetas pendientes entran al swiper
+            cardsCount: _remainingCount,
+            numberOfCardsDisplayed: _remainingCount >= 3 ? 3 : _remainingCount,
             backCardOffset: const Offset(0, 40),
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
             allowedSwipeDirection: const AllowedSwipeDirection.only(
@@ -93,10 +118,11 @@ class _StudyScreenState extends State<StudyScreen> {
             ),
             onSwipe: _onSwipe,
             onEnd: _onEnd,
-            cardBuilder: (context, index, _, __) => _buildFlipCard(index),
+            // ← El índice del swiper se traduce al índice real de la lista
+            cardBuilder: (context, index, _, __) =>
+                _buildFlipCard(index + _startOffset),
           ),
         ),
-        // Botones manuales de acierto/error
         _ActionButtons(
           onMiss: () => _swiperController.swipe(CardSwiperDirection.left),
           onHit: () => _swiperController.swipe(CardSwiperDirection.right),
@@ -106,12 +132,12 @@ class _StudyScreenState extends State<StudyScreen> {
     );
   }
 
-  Widget _buildFlipCard(int index) {
-    final card = widget.cards[index];
+  Widget _buildFlipCard(int realIndex) {
+    final card = widget.cards[realIndex];
     final colorScheme = Theme.of(context).colorScheme;
 
     return FlipCard(
-      controller: _flipControllers[index],
+      controller: _flipControllers[realIndex],
       flipOnTouch: true,
       direction: FlipDirection.HORIZONTAL,
       front: _CardFace(
@@ -195,7 +221,9 @@ class _StudyScreenState extends State<StudyScreen> {
     int? currentIndex,
     CardSwiperDirection direction,
   ) {
-    final card = widget.cards[prevIndex];
+    // prevIndex es relativo al swiper; convertir a índice real
+    final realPrev = prevIndex + _startOffset;
+    final card = widget.cards[realPrev];
     final provider = context.read<CardProvider>();
     final sessionProvider = context.read<SessionProvider>();
 
@@ -207,10 +235,16 @@ class _StudyScreenState extends State<StudyScreen> {
       provider.recordMiss(card);
     }
 
-    // Actualiza progreso visible en CardListScreen
-    sessionProvider.updateProgress(_hits, _misses);
+    // El índice real que corresponde al siguiente en el swiper
+    final nextRealIndex = (currentIndex != null)
+        ? currentIndex + _startOffset
+        : widget.cards.length;
 
-    if (currentIndex != null) setState(() => _currentIndex = currentIndex);
+    setState(() => _currentIndex = nextRealIndex);
+
+    // ← Persiste hits, misses Y el índice actual para poder reanudar
+    sessionProvider.updateProgress(_hits, _misses, nextRealIndex);
+
     return true;
   }
 
@@ -229,9 +263,12 @@ class _StudyScreenState extends State<StudyScreen> {
 
   void _restartSession() {
     final sessionProvider = context.read<SessionProvider>();
+    // Forzar nueva sesión desde cero (abandonar la actual y crear una nueva)
+    sessionProvider.abandonSession();
     sessionProvider.startSession(widget.deck.id!);
 
     setState(() {
+      _startOffset = 0;
       _currentIndex = 0;
       _hits = 0;
       _misses = 0;

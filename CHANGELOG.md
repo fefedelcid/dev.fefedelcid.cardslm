@@ -50,12 +50,22 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- No hay correcciones de errores en esta versión inicial.
+- `session_provider.dart`:
+  - Se añadió `_currentIndex` con su getter para rastrear qué tarjeta se estaba viendo.
+  - `startSession()` ahora es **idempotente**: si `_activeDeckId == deckId` retorna sin hacer nada. Antes siempre reseteaba al entrar a la pantalla.
+  - `updateProgress()` recibe un 3er parámetro `index` para persistir la posición actual en memoria junto con hits y misses.
+
+- `study_screen.dart`
+  - Se añadió `_startOffset` para saber desde qué tarjeta reanudar.
+  - `_initSession()` (llamado via `addPostFrameCallback`) detecta si ya hay sesión activa: si sí, restaura `_hits`, `_misses` y `_startOffset`; si no, llama `startSession()`.
+  - El `CardSwiper` recibe `cardsCount: _remainingCount` y el `cardBuilder` traduce el índice relativo del swiper al índice real de la lista con `index + _startOffset`. Así el swiper arranca desde la tarjeta pendiente, no desde la primera.
+  - `_onSwipe` también convierte `prevIndex` y `currentIndex` al índice real antes de operar.
+  - `_restartSession()` llama `abandonSession()` antes de `startSession()` para forzar el reset, ya que ahora `startSession` es idempotente.
 
 ### TODO
 
-- [ ] Arreglar el guardado de sesión `study_screen.dart > _onEnd`: Al salir de la misma, incluso al salir del mazo, el progreso se observa mas no se puede retomar la sesión, sino que ésta se reinicia.
-- [ ] Agregar sintaxis LaTeX para tarjetas con ecuaciones matemáticas.
+- [x] Arreglar el guardado de sesión `study_screen.dart > _onEnd`: Al salir de la misma, incluso al salir del mazo, el progreso se observa mas no se puede retomar la sesión, sino que ésta se reinicia.
+- [ ] Agregar sintaxis LaTeX para tarjetas con ecuaciones matemáticas. ($¬P\landQ$)
   - [ ] Agregar funcionalidad para escribir LaTeX sin mucha complicación (ver implementación en `com.bagatrix.mathway`)
 - [ ] Agregar monetización y publicar en PlayStore.
 
