@@ -18,7 +18,7 @@ class StudySession {
   int get accuracy => total > 0 ? (hits / total * 100).round() : 0;
 
   Map<String, dynamic> toMap() => {
-    'id': id,
+    if (id != null) 'id': id,
     'deck_id': deckId,
     'hits': hits,
     'misses': misses,

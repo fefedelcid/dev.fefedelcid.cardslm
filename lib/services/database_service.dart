@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/deck.dart';
 import '../models/card.dart';
 import '../models/study_session.dart';
+import '../models/study_progress.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -21,45 +23,78 @@ class DatabaseService {
     final path = join(await getDatabasesPath(), 'flashcards.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 2, // ← bumped de 1 a 2 para agregar study_progress
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
       onConfigure: (db) async => await db.execute('PRAGMA foreign_keys = ON'),
     );
   }
 
+  /// Instalaciones nuevas: crea las 4 tablas desde cero.
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
-    CREATE TABLE decks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      description TEXT,
-      created_at TEXT NOT NULL
-    )
-  ''');
+      CREATE TABLE decks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
 
     await db.execute('''
-    CREATE TABLE cards (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      deck_id INTEGER NOT NULL,
-      front TEXT NOT NULL,
-      back TEXT NOT NULL,
-      hits INTEGER NOT NULL DEFAULT 0,
-      misses INTEGER NOT NULL DEFAULT 0,
-      FOREIGN KEY (deck_id) REFERENCES decks (id) ON DELETE CASCADE
-    )
-  ''');
+      CREATE TABLE cards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deck_id INTEGER NOT NULL,
+        front TEXT NOT NULL,
+        back TEXT NOT NULL,
+        hits INTEGER NOT NULL DEFAULT 0,
+        misses INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (deck_id) REFERENCES decks (id) ON DELETE CASCADE
+      )
+    ''');
 
+    // Historial de sesiones completadas (leaderboard).
     await db.execute('''
-    CREATE TABLE study_sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      deck_id INTEGER NOT NULL,
-      hits INTEGER NOT NULL,
-      misses INTEGER NOT NULL,
-      total INTEGER NOT NULL,
-      completed_at TEXT NOT NULL,
-      FOREIGN KEY (deck_id) REFERENCES decks (id) ON DELETE CASCADE
-    )
-  ''');
+      CREATE TABLE study_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deck_id INTEGER NOT NULL,
+        hits INTEGER NOT NULL,
+        misses INTEGER NOT NULL,
+        total INTEGER NOT NULL,
+        completed_at TEXT NOT NULL,
+        FOREIGN KEY (deck_id) REFERENCES decks (id) ON DELETE CASCADE
+      )
+    ''');
+
+    // Progreso parcial de sesión en curso (para reanudar).
+    await db.execute('''
+      CREATE TABLE study_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deck_id INTEGER NOT NULL UNIQUE,
+        current_index INTEGER NOT NULL DEFAULT 0,
+        correct_count INTEGER NOT NULL DEFAULT 0,
+        incorrect_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (deck_id) REFERENCES decks(id) ON DELETE CASCADE
+      )
+    ''');
+  }
+
+  /// Usuarios existentes en v1: solo agregar study_progress.
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS study_progress (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          deck_id INTEGER NOT NULL UNIQUE,
+          current_index INTEGER NOT NULL DEFAULT 0,
+          correct_count INTEGER NOT NULL DEFAULT 0,
+          incorrect_count INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (deck_id) REFERENCES decks(id) ON DELETE CASCADE
+        )
+      ''');
+    }
   }
 
   // ── DECKS ──────────────────────────────────────────────
@@ -100,7 +135,6 @@ class DatabaseService {
   Future<int> deleteDeck(int id) async {
     try {
       final db = await database;
-      // ON DELETE CASCADE elimina las cards asociadas automáticamente.
       return await db.delete('decks', where: 'id = ?', whereArgs: [id]);
     } catch (e) {
       throw Exception('Error al eliminar deck: $e');
@@ -181,7 +215,8 @@ class DatabaseService {
     }
   }
 
-  // ── STUDY SESSIONS ──────────────────────────────────────────────
+  // ── STUDY SESSIONS (historial / leaderboard) ───────────
+
   Future<int> insertSession(StudySession session) async {
     try {
       final db = await database;
@@ -206,6 +241,30 @@ class DatabaseService {
     }
   }
 
+  Future<StudySession?> getSessionByDeck(int deckId) async {
+    try {
+      final db = await database;
+      final maps = await db.query(
+        'study_progress',
+        where: 'deck_id = ?',
+        whereArgs: [deckId],
+        limit: 1,
+      );
+      if (maps.isEmpty) return null;
+      final progress = StudyProgress.fromMap(maps.first);
+      return StudySession(
+        deckId: deckId,
+        hits: progress.correctCount,
+        misses: progress.incorrectCount,
+        total: progress.currentIndex,
+        completedAt: progress.updatedAt,
+      );
+    } catch (e) {
+      debugPrint('Error al obtener sesión por deck: $e');
+      return null;
+    }
+  }
+
   Future<bool> hasSessionsForDeck(int deckId) async {
     try {
       final db = await database;
@@ -216,6 +275,51 @@ class DatabaseService {
       return (Sqflite.firstIntValue(result) ?? 0) > 0;
     } catch (e) {
       return false;
+    }
+  }
+
+  // ── STUDY PROGRESS (reanudación de sesión parcial) ──────
+
+  Future<StudyProgress?> getProgressByDeckId(int deckId) async {
+    try {
+      final db = await database;
+      final results = await db.query(
+        'study_progress',
+        where: 'deck_id = ?',
+        whereArgs: [deckId],
+        limit: 1,
+      );
+      if (results.isEmpty) return null;
+      return StudyProgress.fromMap(results.first);
+    } catch (e) {
+      debugPrint('Error al obtener progreso: $e');
+      return null;
+    }
+  }
+
+  Future<void> upsertProgress(StudyProgress progress) async {
+    try {
+      final db = await database;
+      await db.insert(
+        'study_progress',
+        progress.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (e) {
+      debugPrint('Error al guardar progreso: $e');
+    }
+  }
+
+  Future<void> deleteProgress(int deckId) async {
+    try {
+      final db = await database;
+      await db.delete(
+        'study_progress',
+        where: 'deck_id = ?',
+        whereArgs: [deckId],
+      );
+    } catch (e) {
+      debugPrint('Error al eliminar progreso: $e');
     }
   }
 }

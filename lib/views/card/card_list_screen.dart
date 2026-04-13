@@ -169,7 +169,7 @@ class _CardListScreenState extends State<CardListScreen> {
     final sessionProvider = context.read<SessionProvider>();
 
     if (!sessionProvider.isSessionActive(widget.deck.id!)) {
-      sessionProvider.startSession(widget.deck.id!);
+      sessionProvider.startOrResumeSession(widget.deck.id!);
     }
 
     Navigator.push(

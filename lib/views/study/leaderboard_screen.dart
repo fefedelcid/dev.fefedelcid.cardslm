@@ -53,8 +53,8 @@ class _SummaryCard extends StatelessWidget {
     final avgAccuracy = sessions.isEmpty
         ? 0
         : (sessions.map((s) => s.accuracy).reduce((a, b) => a + b) /
-                  totalSessions)
-              .round();
+                totalSessions)
+            .round();
     final best = sessions.reduce((a, b) => a.accuracy >= b.accuracy ? a : b);
 
     final colorScheme = Theme.of(context).colorScheme;
@@ -139,8 +139,8 @@ class _SessionTile extends StatelessWidget {
     final color = accuracy >= 80
         ? Colors.green
         : accuracy >= 50
-        ? Colors.orange
-        : Colors.red;
+            ? Colors.orange
+            : Colors.red;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -161,8 +161,7 @@ class _SessionTile extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          '✅ ${session.hits}  ❌ ${session.misses}  '
-          '· ${session.total} tarjetas',
+          '✅ ${session.hits}  ❌ ${session.misses}  · ${session.total} tarjetas',
           style: const TextStyle(fontSize: 12),
         ),
         trailing: Text(

@@ -7,6 +7,54 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.2] Bug Fixes - 2026-4-13
+
+---
+
+### Added
+
+- Modelos de Datos:
+  - `study_progress.dart`: Nuevo modelo para persistir el progreso parcial de una sesión (índice actual, aciertos, errores). Separado de `study_session.dart` que sigue siendo el modelo del historial.
+
+- Base de Datos:
+  - `database_service.dart`: Nueva tabla `study_progress` (deck_id UNIQUE). Métodos `getProgressByDeckId`, `upsertProgress`, `deleteProgress`. Migración a `version: 2` con `_onUpgrade` para instalaciones existentes.
+
+### Changed
+
+- `session_provider.dart`:
+  - `startSession()` reemplazado por `startOrResumeSession(int deckId)` (async): guarda el progreso del deck activo antes de cambiar, luego carga el progreso guardado del nuevo deck desde DB.
+  - `updateProgress()` ahora persiste en DB en background (fire-and-forget) además de actualizar el estado en memoria.
+  - `completeSession()` restaurado con el parámetro `total` y la lógica original de `StudySession`. Borra el progreso parcial al completar.
+  - `abandonSession()` ahora es `async` y borra el progreso parcial de la DB.
+  - Agregado `WidgetsBindingObserver` + `didChangeAppLifecycleState`: guarda el progreso cuando la app va a segundo plano o se cierra.
+  - Agregado `checkSavedProgress()`, `hasSavedProgress()`, `hitsFor()`, `missesFor()`: permiten que la UI detecte y muestre progreso pausado aunque no sea el deck activo en memoria.
+
+- `study_screen.dart`:
+  - `_initSession()` ahora es `async`: aguarda `startOrResumeSession()` antes de restaurar el estado local. Muestra un `CircularProgressIndicator` mientras carga.
+  - `completeSession()` restaurado con el parámetro `total`.
+  - `_restartSession()` ahora es `async` y usa `abandonSession()` + `startOrResumeSession()`.
+
+- `card_list_screen.dart`:
+  - `initState` llama a `checkSavedProgress()` además de `checkHasSessions()`.
+  - El banner amarillo y los controles de sesión ahora usan `hasSavedProgress()` en lugar de `isSessionActive()`, por lo que se muestran aunque el deck no sea el activo en memoria.
+  - `_startStudy()` simplificado: ya no llama a `startSession()` (lo maneja `StudyScreen._initSession()`).
+
+- `models/study_session.dart`: Restaurado al schema original (`hits`, `misses`, `total`, `completedAt`, getter `accuracy`).
+
+- `leaderboard_screen.dart`: Restaurada la visualización de precisión, aciertos, errores, total y fecha por sesión.
+
+### Removed
+
+- `providers/study_provider.dart`: Eliminado. Era código duplicado que no estaba integrado a ninguna vista y referenciaba métodos inexistentes.
+
+### Fixed
+
+- **Bug #1 — Sesión destruida al cambiar de mazo**: `startOrResumeSession()` guarda el progreso del deck anterior en `study_progress` antes de activar el nuevo.
+- **Bug #2 — Sesión destruida al cerrar la app**: `WidgetsBindingObserver` en `SessionProvider` persiste el progreso al detectar `AppLifecycleState.paused/inactive/detached`.
+- **Bug #3 — Tarjeta siguiente llega volteada**: `FlipCard` recibe `key: ValueKey(card.id)`, forzando un rebuild limpio del widget cuando `CardSwiper` reutiliza la misma posición del árbol.
+- **Bug #4 — Banner "Sesión en curso" no aparece en deck pausado**: La condición del banner ahora consulta `hasSavedProgress()` que verifica tanto el estado en memoria como la tabla `study_progress` en DB.
+- **Schema en conflicto**: `_onCreate` tenía dos `CREATE TABLE study_sessions` consecutivos; el segundo (con schema diferente) se ignoraba silenciosamente dejando el modelo y la tabla desincronizados.
+
 ## [1.1.1] QoL Improvements - 2026-4-9
 
 ---
@@ -61,13 +109,6 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/).
   - El `CardSwiper` recibe `cardsCount: _remainingCount` y el `cardBuilder` traduce el índice relativo del swiper al índice real de la lista con `index + _startOffset`. Así el swiper arranca desde la tarjeta pendiente, no desde la primera.
   - `_onSwipe` también convierte `prevIndex` y `currentIndex` al índice real antes de operar.
   - `_restartSession()` llama `abandonSession()` antes de `startSession()` para forzar el reset, ya que ahora `startSession` es idempotente.
-
-### TODO
-
-- [x] Arreglar el guardado de sesión `study_screen.dart > _onEnd`: Al salir de la misma, incluso al salir del mazo, el progreso se observa mas no se puede retomar la sesión, sino que ésta se reinicia.
-- [ ] Agregar sintaxis LaTeX para tarjetas con ecuaciones matemáticas. ($¬P\landQ$)
-  - [ ] Agregar funcionalidad para escribir LaTeX sin mucha complicación (ver implementación en `com.bagatrix.mathway`)
-- [ ] Agregar monetización y publicar en PlayStore.
 
 ## [1.0.0-MVP] - 2026-4-9
 

@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
 import '../models/study_session.dart';
+import '../models/study_progress.dart';
 import '../services/database_service.dart';
 
-class SessionProvider extends ChangeNotifier {
+class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _db = DatabaseService();
 
   // ── Estado de sesión activa ───────────────────────────
   int? _activeDeckId;
   int _currentHits = 0;
   int _currentMisses = 0;
-  int _currentIndex = 0; // ← NUEVO: índice de la tarjeta actual
+  int _currentIndex = 0;
 
   int? get activeDeckId => _activeDeckId;
   int get currentHits => _currentHits;
   int get currentMisses => _currentMisses;
-  int get currentIndex => _currentIndex; // ← NUEVO
+  int get currentIndex => _currentIndex;
 
   bool isSessionActive(int deckId) => _activeDeckId == deckId;
   bool get hasActiveSession => _activeDeckId != null;
@@ -26,31 +27,51 @@ class SessionProvider extends ChangeNotifier {
   List<StudySession> get sessions => List.unmodifiable(_sessions);
   bool get hasAnySessions => _hasAnySessions;
 
+  SessionProvider() {
+    WidgetsBinding.instance.addObserver(this);
+  }
+
   // ── Control de sesión ─────────────────────────────────
 
-  /// Inicia una sesión nueva SOLO si no hay una activa para este deck.
-  /// Si ya existe una sesión para el mismo deck, no hace nada (idempotente).
-  void startSession(int deckId) {
-    // ← CAMBIO CLAVE: no resetear si ya hay sesión activa para este deck
+  /// Inicia o reanuda la sesión para [deckId].
+  /// Si había otra sesión activa, guarda su progreso antes de cambiar.
+  /// Si ya existe progreso guardado para [deckId], lo restaura.
+  Future<void> startOrResumeSession(int deckId) async {
+    // Idempotente: si ya está activa para este deck, no hace nada.
     if (_activeDeckId == deckId) return;
 
+    // Guardar progreso del deck anterior antes de cambiar (Bug #1).
+    if (_activeDeckId != null) {
+      await _persistProgress();
+    }
+
     _activeDeckId = deckId;
-    _currentHits = 0;
-    _currentMisses = 0;
-    _currentIndex = 0;
+
+    // Intentar restaurar progreso guardado en DB.
+    final saved = await _db.getProgressByDeckId(deckId);
+    if (saved != null) {
+      _currentHits = saved.correctCount;
+      _currentMisses = saved.incorrectCount;
+      _currentIndex = saved.currentIndex;
+    } else {
+      _currentHits = 0;
+      _currentMisses = 0;
+      _currentIndex = 0;
+    }
+
     notifyListeners();
   }
 
-  /// Actualiza el progreso en curso (se llama en cada swipe).
+  /// Actualiza el progreso en curso y lo persiste en DB (fire-and-forget).
   void updateProgress(int hits, int misses, int index) {
-    // ← index añadido
     _currentHits = hits;
     _currentMisses = misses;
-    _currentIndex = index; // ← persiste el índice actual en memoria
+    _currentIndex = index;
     notifyListeners();
+    _persistProgress(); // no await: no bloquea la UI
   }
 
-  /// Persiste la sesión completada y limpia el estado activo.
+  /// Persiste la sesión completada en el historial y limpia el estado activo.
   Future<void> completeSession({
     required int deckId,
     required int hits,
@@ -66,6 +87,7 @@ class SessionProvider extends ChangeNotifier {
     );
 
     await _db.insertSession(session);
+    await _db.deleteProgress(deckId); // ya no necesita reanudarse
 
     _activeDeckId = null;
     _currentHits = 0;
@@ -75,8 +97,11 @@ class SessionProvider extends ChangeNotifier {
     await loadSessions(deckId);
   }
 
-  /// Abandona sin guardar. Limpia el estado activo.
-  void abandonSession() {
+  /// Abandona sin guardar en historial. Borra también el progreso parcial.
+  Future<void> abandonSession() async {
+    if (_activeDeckId != null) {
+      await _db.deleteProgress(_activeDeckId!);
+    }
     _activeDeckId = null;
     _currentHits = 0;
     _currentMisses = 0;
@@ -100,5 +125,37 @@ class SessionProvider extends ChangeNotifier {
   Future<void> checkHasSessions(int deckId) async {
     _hasAnySessions = await _db.hasSessionsForDeck(deckId);
     notifyListeners();
+  }
+
+  // ── Ciclo de vida de la app ───────────────────────────
+
+  /// Guarda el progreso cuando la app va a segundo plano (Bug #2).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _persistProgress();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // ── Helpers privados ──────────────────────────────────
+
+  Future<void> _persistProgress() async {
+    if (_activeDeckId == null) return;
+    final progress = StudyProgress(
+      deckId: _activeDeckId!,
+      currentIndex: _currentIndex,
+      correctCount: _currentHits,
+      incorrectCount: _currentMisses,
+      updatedAt: DateTime.now(),
+    );
+    await _db.upsertProgress(progress);
   }
 }
