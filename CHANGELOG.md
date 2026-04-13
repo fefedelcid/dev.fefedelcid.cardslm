@@ -19,6 +19,10 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/).
 - Base de Datos:
   - `database_service.dart`: Nueva tabla `study_progress` (deck_id UNIQUE). Métodos `getProgressByDeckId`, `upsertProgress`, `deleteProgress`. Migración a `version: 2` con `_onUpgrade` para instalaciones existentes.
 
+- `session_provider.dart`:
+  - Agregado `WidgetsBindingObserver` + `didChangeAppLifecycleState`: guarda el progreso cuando la app va a segundo plano o se cierra.
+  - Agregado `checkSavedProgress()`, `hasSavedProgress()`, `hitsFor()`, `missesFor()`: permiten que la UI detecte y muestre progreso pausado aunque no sea el deck activo en memoria.
+
 ### Changed
 
 - `session_provider.dart`:
@@ -26,8 +30,11 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/).
   - `updateProgress()` ahora persiste en DB en background (fire-and-forget) además de actualizar el estado en memoria.
   - `completeSession()` restaurado con el parámetro `total` y la lógica original de `StudySession`. Borra el progreso parcial al completar.
   - `abandonSession()` ahora es `async` y borra el progreso parcial de la DB.
-  - Agregado `WidgetsBindingObserver` + `didChangeAppLifecycleState`: guarda el progreso cuando la app va a segundo plano o se cierra.
-  - Agregado `checkSavedProgress()`, `hasSavedProgress()`, `hitsFor()`, `missesFor()`: permiten que la UI detecte y muestre progreso pausado aunque no sea el deck activo en memoria.
+  - Agregado `Map<int, StudyProgress?> _progressCache`: guarda el resultado de consultas a DB por deck.
+  - `checkSavedProgress(deckId)`: consulta a la DB y llena el cache para el deck en cuestión.
+  - `hasSavedProgress(deckId)`: devuelve `true` si hay sesión activa en memoria o progreso en DB. Este es el único bool que usa la UI ahora.
+  - `hitsFor(deckId)`/`missesFor(deckId)`: saben de dónde leer dependiendo del estado.
+  - El cache se limpia correctamente en `abandonSession`, `completeSession` y `startOrResumeSession`.
 
 - `study_screen.dart`:
   - `_initSession()` ahora es `async`: aguarda `startOrResumeSession()` antes de restaurar el estado local. Muestra un `CircularProgressIndicator` mientras carga.

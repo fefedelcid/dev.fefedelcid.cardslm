@@ -6,7 +6,7 @@ import '../services/database_service.dart';
 class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _db = DatabaseService();
 
-  // ── Estado de sesión activa ───────────────────────────
+  // ── Estado de sesión activa (en memoria) ──────────────
   int? _activeDeckId;
   int _currentHits = 0;
   int _currentMisses = 0;
@@ -19,6 +19,24 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   bool isSessionActive(int deckId) => _activeDeckId == deckId;
   bool get hasActiveSession => _activeDeckId != null;
+
+  // ── Cache de progreso pausado (en DB pero no activo) ──
+  // Clave: deckId. Valor: progreso cargado desde DB para ese deck.
+  final Map<int, StudyProgress?> _progressCache = {};
+
+  /// True si hay sesión activa EN MEMORIA o progreso guardado EN DB para [deckId].
+  bool hasSavedProgress(int deckId) =>
+      isSessionActive(deckId) || (_progressCache[deckId] != null);
+
+  /// Hits a mostrar en el banner para [deckId] (memoria o cache de DB).
+  int hitsFor(int deckId) => isSessionActive(deckId)
+      ? _currentHits
+      : (_progressCache[deckId]?.correctCount ?? 0);
+
+  /// Misses a mostrar en el banner para [deckId] (memoria o cache de DB).
+  int missesFor(int deckId) => isSessionActive(deckId)
+      ? _currentMisses
+      : (_progressCache[deckId]?.incorrectCount ?? 0);
 
   // ── Leaderboard ───────────────────────────────────────
   List<StudySession> _sessions = [];
@@ -34,20 +52,19 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
   // ── Control de sesión ─────────────────────────────────
 
   /// Inicia o reanuda la sesión para [deckId].
-  /// Si había otra sesión activa, guarda su progreso antes de cambiar.
-  /// Si ya existe progreso guardado para [deckId], lo restaura.
+  /// Si había otro deck activo, guarda su progreso antes de cambiar.
   Future<void> startOrResumeSession(int deckId) async {
-    // Idempotente: si ya está activa para este deck, no hace nada.
     if (_activeDeckId == deckId) return;
 
-    // Guardar progreso del deck anterior antes de cambiar (Bug #1).
+    // Guardar progreso del deck anterior (Bug #1).
     if (_activeDeckId != null) {
       await _persistProgress();
     }
 
     _activeDeckId = deckId;
+    _progressCache.remove(deckId); // ya no es "pausado", está activo
 
-    // Intentar restaurar progreso guardado en DB.
+    // Restaurar progreso guardado si existe.
     final saved = await _db.getProgressByDeckId(deckId);
     if (saved != null) {
       _currentHits = saved.correctCount;
@@ -62,16 +79,26 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Consulta la DB para saber si [deckId] tiene progreso guardado.
+  /// Llamar desde initState de CardListScreen para mostrar el banner correcto.
+  Future<void> checkSavedProgress(int deckId) async {
+    if (isSessionActive(deckId)) return; // ya está en memoria, no hace falta
+
+    final progress = await _db.getProgressByDeckId(deckId);
+    _progressCache[deckId] = progress;
+    notifyListeners();
+  }
+
   /// Actualiza el progreso en curso y lo persiste en DB (fire-and-forget).
   void updateProgress(int hits, int misses, int index) {
     _currentHits = hits;
     _currentMisses = misses;
     _currentIndex = index;
     notifyListeners();
-    _persistProgress(); // no await: no bloquea la UI
+    _persistProgress();
   }
 
-  /// Persiste la sesión completada en el historial y limpia el estado activo.
+  /// Persiste la sesión completada en el historial y limpia el estado.
   Future<void> completeSession({
     required int deckId,
     required int hits,
@@ -87,20 +114,23 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
     );
 
     await _db.insertSession(session);
-    await _db.deleteProgress(deckId); // ya no necesita reanudarse
+    await _db.deleteProgress(deckId);
 
     _activeDeckId = null;
     _currentHits = 0;
     _currentMisses = 0;
     _currentIndex = 0;
+    _progressCache[deckId] = null;
 
     await loadSessions(deckId);
   }
 
-  /// Abandona sin guardar en historial. Borra también el progreso parcial.
+  /// Abandona la sesión sin guardar en historial. Borra el progreso parcial.
   Future<void> abandonSession() async {
-    if (_activeDeckId != null) {
-      await _db.deleteProgress(_activeDeckId!);
+    final deckId = _activeDeckId;
+    if (deckId != null) {
+      await _db.deleteProgress(deckId);
+      _progressCache[deckId] = null;
     }
     _activeDeckId = null;
     _currentHits = 0;
@@ -129,7 +159,7 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // ── Ciclo de vida de la app ───────────────────────────
 
-  /// Guarda el progreso cuando la app va a segundo plano (Bug #2).
+  /// Guarda el progreso al ir a segundo plano (Bug #2).
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||

@@ -21,9 +21,11 @@ class _CardListScreenState extends State<CardListScreen> {
   @override
   void initState() {
     super.initState();
-    // Verificar si ya hay sesiones guardadas para este deck
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SessionProvider>().checkHasSessions(widget.deck.id!);
+      final sp = context.read<SessionProvider>();
+      sp.checkHasSessions(widget.deck.id!);
+      // Consulta DB por progreso pausado para mostrar el banner (Bug #4).
+      sp.checkSavedProgress(widget.deck.id!);
     });
   }
 
@@ -31,7 +33,8 @@ class _CardListScreenState extends State<CardListScreen> {
   Widget build(BuildContext context) {
     final cardProvider = context.watch<CardProvider>();
     final sessionProvider = context.watch<SessionProvider>();
-    final sessionActive = sessionProvider.isSessionActive(widget.deck.id!);
+    // Usa hasSavedProgress: true si hay sesión activa en memoria O progreso en DB.
+    final hasProgress = sessionProvider.hasSavedProgress(widget.deck.id!);
 
     return Scaffold(
       appBar: AppBar(
@@ -44,8 +47,8 @@ class _CardListScreenState extends State<CardListScreen> {
               tooltip: 'Leaderboard',
               onPressed: () => _openLeaderboard(context),
             ),
-          // Importar CSV (bloqueado si hay sesión activa)
-          if (!sessionActive)
+          // Importar CSV (bloqueado si hay sesión activa o pausada)
+          if (!hasProgress)
             IconButton(
               icon: const Icon(Icons.upload_file),
               tooltip: 'Importar CSV',
@@ -53,7 +56,7 @@ class _CardListScreenState extends State<CardListScreen> {
             ),
           // Estudiar / Abandonar sesión
           if (cardProvider.cards.isNotEmpty)
-            sessionActive
+            hasProgress
                 ? IconButton(
                     icon: const Icon(Icons.stop_circle_outlined),
                     tooltip: 'Abandonar sesión',
@@ -67,9 +70,9 @@ class _CardListScreenState extends State<CardListScreen> {
                   ),
         ],
       ),
-      body: _buildBody(context, cardProvider, sessionActive),
-      floatingActionButton: sessionActive
-          ? null // Sin FAB durante sesión activa
+      body: _buildBody(context, cardProvider, hasProgress),
+      floatingActionButton: hasProgress
+          ? null
           : FloatingActionButton.extended(
               onPressed: () => _openForm(context),
               icon: const Icon(Icons.add),
@@ -81,7 +84,7 @@ class _CardListScreenState extends State<CardListScreen> {
   Widget _buildBody(
     BuildContext context,
     CardProvider provider,
-    bool sessionActive,
+    bool hasProgress,
   ) {
     if (provider.isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -126,12 +129,15 @@ class _CardListScreenState extends State<CardListScreen> {
       );
     }
 
+    final sp = context.watch<SessionProvider>();
+    final deckId = widget.deck.id!;
+
     return Column(
       children: [
-        if (sessionActive)
+        if (hasProgress)
           _ActiveSessionBanner(
-            hits: context.watch<SessionProvider>().currentHits,
-            misses: context.watch<SessionProvider>().currentMisses,
+            hits: sp.hitsFor(deckId),
+            misses: sp.missesFor(deckId),
             total: provider.cards.length,
             onResume: () => _startStudy(context),
             onAbandon: () => _confirmAbandon(context),
@@ -145,10 +151,8 @@ class _CardListScreenState extends State<CardListScreen> {
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
             itemCount: provider.cards.length,
-            itemBuilder: (context, index) => _CardTile(
-              card: provider.cards[index],
-              isLocked: sessionActive, // bloquea edición
-            ),
+            itemBuilder: (context, index) =>
+                _CardTile(card: provider.cards[index], isLocked: hasProgress),
           ),
         ),
       ],
@@ -164,14 +168,10 @@ class _CardListScreenState extends State<CardListScreen> {
     );
   }
 
+  /// Navega a StudyScreen. El initState de StudyScreen llama a
+  /// startOrResumeSession(), que se encarga de guardar/cargar el progreso.
   void _startStudy(BuildContext context) {
     final cards = context.read<CardProvider>().cards;
-    final sessionProvider = context.read<SessionProvider>();
-
-    if (!sessionProvider.isSessionActive(widget.deck.id!)) {
-      sessionProvider.startOrResumeSession(widget.deck.id!);
-    }
-
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -196,6 +196,8 @@ class _CardListScreenState extends State<CardListScreen> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
+              // abandonSession es async pero no necesitamos aguardar: el
+              // notifyListeners() interno actualiza el banner inmediatamente.
               context.read<SessionProvider>().abandonSession();
               Navigator.pop(ctx);
             },
@@ -236,7 +238,7 @@ class _CardListScreenState extends State<CardListScreen> {
   }
 }
 
-// ── Banner sesión activa ──────────────────────────────
+// ── Banner sesión activa/pausada ──────────────────────
 
 class _ActiveSessionBanner extends StatelessWidget {
   const _ActiveSessionBanner({
@@ -351,7 +353,6 @@ class _CardTile extends StatelessWidget {
             _StatChip(icon: Icons.check, count: card.hits, color: Colors.green),
             const SizedBox(width: 6),
             _StatChip(icon: Icons.close, count: card.misses, color: Colors.red),
-            // Menú bloqueado si hay sesión activa
             if (!isLocked) _CardMenu(card: card),
           ],
         ),
