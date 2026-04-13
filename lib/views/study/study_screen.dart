@@ -8,6 +8,7 @@ import '../../models/deck.dart';
 import '../../models/card.dart';
 import '../../providers/card_provider.dart';
 import '../../providers/session_provider.dart';
+import '../widgets/math_text.dart';
 
 class StudyScreen extends StatefulWidget {
   const StudyScreen({super.key, required this.deck, required this.cards});
@@ -26,9 +27,8 @@ class _StudyScreenState extends State<StudyScreen> {
   int _hits = 0;
   int _misses = 0;
   bool _isFinished = false;
-  bool _isInitializing = true; // muestra loader hasta que se cargue el progreso
+  bool _isInitializing = true;
 
-  // Offset de reanudación: las tarjetas ya vistas se omiten en el swiper.
   int _startOffset = 0;
 
   @override
@@ -42,8 +42,6 @@ class _StudyScreenState extends State<StudyScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _initSession());
   }
 
-  /// Reanuda la sesión si existe progreso guardado para este deck,
-  /// o inicia una nueva si no lo hay.
   Future<void> _initSession() async {
     if (!mounted) return;
     final sp = context.read<SessionProvider>();
@@ -83,8 +81,8 @@ class _StudyScreenState extends State<StudyScreen> {
       body: _isInitializing
           ? const Center(child: CircularProgressIndicator())
           : _isFinished
-              ? _buildFinishedView(context)
-              : _buildStudyView(context),
+          ? _buildFinishedView(context)
+          : _buildStudyView(context),
     );
   }
 
@@ -114,7 +112,7 @@ class _StudyScreenState extends State<StudyScreen> {
             ),
             onSwipe: _onSwipe,
             onEnd: _onEnd,
-            cardBuilder: (context, index, _, __) =>
+            cardBuilder: (context, index, _, _) =>
                 _buildFlipCard(index + _startOffset),
           ),
         ),
@@ -132,8 +130,6 @@ class _StudyScreenState extends State<StudyScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return FlipCard(
-      // Fix Bug #3: key único por ID de tarjeta fuerza un rebuild limpio
-      // cuando CardSwiper reutiliza la misma posición del árbol de widgets.
       key: ValueKey(card.id ?? realIndex),
       controller: _flipControllers[realIndex],
       flipOnTouch: true,
@@ -288,6 +284,13 @@ class _CardFace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final contentStyle = TextStyle(
+      color: textColor,
+      fontSize: 22,
+      fontWeight: FontWeight.w600,
+      height: 1.4,
+    );
+
     return Container(
       decoration: BoxDecoration(
         color: color,
@@ -300,44 +303,42 @@ class _CardFace extends StatelessWidget {
           ),
         ],
       ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            // Etiqueta superior
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: textColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
                 ),
-                decoration: BoxDecoration(
-                  color: textColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Contenido: scrollable para acomodar matrices grandes
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  child: MathText(
+                    text,
+                    textStyle: contentStyle,
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-              Text(
-                text,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
-                  height: 1.4,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

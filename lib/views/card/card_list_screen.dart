@@ -8,6 +8,7 @@ import '../../providers/session_provider.dart';
 import 'card_form_screen.dart';
 import '../study/study_screen.dart';
 import '../study/leaderboard_screen.dart';
+import '../widgets/math_text.dart';
 
 class CardListScreen extends StatefulWidget {
   const CardListScreen({super.key, required this.deck});
@@ -24,7 +25,6 @@ class _CardListScreenState extends State<CardListScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final sp = context.read<SessionProvider>();
       sp.checkHasSessions(widget.deck.id!);
-      // Consulta DB por progreso pausado para mostrar el banner (Bug #4).
       sp.checkSavedProgress(widget.deck.id!);
     });
   }
@@ -33,28 +33,24 @@ class _CardListScreenState extends State<CardListScreen> {
   Widget build(BuildContext context) {
     final cardProvider = context.watch<CardProvider>();
     final sessionProvider = context.watch<SessionProvider>();
-    // Usa hasSavedProgress: true si hay sesión activa en memoria O progreso en DB.
     final hasProgress = sessionProvider.hasSavedProgress(widget.deck.id!);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.deck.name),
         actions: [
-          // Leaderboard (solo si hay sesiones finalizadas)
           if (sessionProvider.hasAnySessions)
             IconButton(
               icon: const Icon(Icons.leaderboard),
               tooltip: 'Leaderboard',
               onPressed: () => _openLeaderboard(context),
             ),
-          // Importar CSV (bloqueado si hay sesión activa o pausada)
           if (!hasProgress)
             IconButton(
               icon: const Icon(Icons.upload_file),
               tooltip: 'Importar CSV',
               onPressed: () => _importCsv(context),
             ),
-          // Estudiar / Abandonar sesión
           if (cardProvider.cards.isNotEmpty)
             hasProgress
                 ? IconButton(
@@ -168,8 +164,6 @@ class _CardListScreenState extends State<CardListScreen> {
     );
   }
 
-  /// Navega a StudyScreen. El initState de StudyScreen llama a
-  /// startOrResumeSession(), que se encarga de guardar/cargar el progreso.
   void _startStudy(BuildContext context) {
     final cards = context.read<CardProvider>().cards;
     Navigator.push(
@@ -196,8 +190,6 @@ class _CardListScreenState extends State<CardListScreen> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
-              // abandonSession es async pero no necesitamos aguardar: el
-              // notifyListeners() interno actualiza el banner inmediatamente.
               context.read<SessionProvider>().abandonSession();
               Navigator.pop(ctx);
             },
@@ -336,30 +328,160 @@ class _CardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        title: Text(
-          card.front,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(card.back, maxLines: 1, overflow: TextOverflow.ellipsis),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _StatChip(icon: Icons.check, count: card.hits, color: Colors.green),
-            const SizedBox(width: 6),
-            _StatChip(icon: Icons.close, count: card.misses, color: Colors.red),
-            if (!isLocked) _CardMenu(card: card),
+            // ── Fila superior: pregunta + stats + menú ──
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: _AutoHScroll(
+                    child: MathText(
+                      card.front,
+                      textStyle: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.start,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _StatChip(
+                  icon: Icons.check,
+                  count: card.hits,
+                  color: Colors.green,
+                ),
+                const SizedBox(width: 6),
+                _StatChip(
+                  icon: Icons.close,
+                  count: card.misses,
+                  color: Colors.red,
+                ),
+                if (!isLocked) _CardMenu(card: card),
+              ],
+            ),
+            const SizedBox(height: 6),
+            // ── Dorso ──
+            if (isLocked)
+              // Sesión en curso: ocultar respuesta
+              Row(
+                children: [
+                  Icon(Icons.lock_outline, size: 13, color: Colors.grey[400]),
+                  const SizedBox(width: 6),
+                  Text(
+                    '• • • • • • • • • •',
+                    style: TextStyle(
+                      color: Colors.grey[400],
+                      fontSize: 12,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ],
+              )
+            else
+              // Sin sesión: respuesta completa con LaTeX y scroll automático
+              _AutoHScroll(
+                child: MathText(
+                  card.back,
+                  textStyle: TextStyle(fontSize: 13, color: subtitleColor),
+                  textAlign: TextAlign.start,
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 }
+
+// ── Scroll horizontal automático ─────────────────────
+//
+// Envuelve cualquier widget en un SingleChildScrollView horizontal.
+// Si el contenido desborda el ancho disponible, inicia un bucle de
+// desplazamiento automático: pausa → avanza → pausa → vuelve al inicio.
+
+class _AutoHScroll extends StatefulWidget {
+  const _AutoHScroll({required this.child});
+  final Widget child;
+
+  @override
+  State<_AutoHScroll> createState() => _AutoHScrollState();
+}
+
+class _AutoHScrollState extends State<_AutoHScroll> {
+  final _ctrl = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Espera a que el layout esté listo antes de medir el overflow.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startIfNeeded());
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startIfNeeded() async {
+    if (!mounted || !_ctrl.hasClients) return;
+    final max = _ctrl.position.maxScrollExtent;
+    if (max > 0) await _loop(max);
+  }
+
+  /// Bucle de scroll: pausa inicial → avanza → pausa final → reset → repite.
+  Future<void> _loop(double max) async {
+    // Velocidad: 40 px/s para texto, límites entre 2 s y 12 s.
+    final travelMs = (max * 25).round().clamp(2000, 12000);
+
+    while (mounted) {
+      // Pausa antes de empezar a moverse.
+      await Future.delayed(const Duration(milliseconds: 1800));
+      if (!mounted || !_ctrl.hasClients) return;
+
+      // Avance suave hasta el final.
+      try {
+        await _ctrl.animateTo(
+          max,
+          duration: Duration(milliseconds: travelMs),
+          curve: Curves.linear,
+        );
+      } catch (_) {
+        return; // El controlador fue descartado durante la animación.
+      }
+      if (!mounted) return;
+
+      // Pausa al llegar al final.
+      await Future.delayed(const Duration(milliseconds: 1200));
+      if (!mounted || !_ctrl.hasClients) return;
+
+      // Regresa al inicio de forma instantánea.
+      _ctrl.jumpTo(0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      controller: _ctrl,
+      scrollDirection: Axis.horizontal,
+      // El scroll es solo programático; el usuario no arrastra esta fila.
+      physics: const NeverScrollableScrollPhysics(),
+      child: widget.child,
+    );
+  }
+}
+
+// ── Chips y menú ─────────────────────────────────────
 
 class _StatChip extends StatelessWidget {
   const _StatChip({

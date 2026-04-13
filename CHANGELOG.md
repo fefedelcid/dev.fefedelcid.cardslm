@@ -7,6 +7,33 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [1.1.3] Renderizado y escritura LaTeX - 2026-4-13
+
+### Added
+
+- Agregado `MathText` (nuevo en `lib/views/widgets`):
+  - Parser con regex `\$\$(.+?)\$\$|\$(.+?)\$` y `dotAll: true` - el flag es clave para que los saltos de línea dentro de `\begin{pmatrix}...\end{pmatrix}` sean capturados correctamente.
+  - `onErrorFallback` loguea con `debugPrint` y muestra el LaTeX crudo en rojo itálico.
+
+### Changed
+
+- `card_form_screen.dart`:
+  - `_PreviewSide` reemplaza `Text` con `MathText` + `ConstrainedBox(maxHeight: 120)` + `NeverScrollableScrollPhysics` - el preview es indicativo, no hace falta scroll ahí.
+  - `crossAxisAlignment: CrossAxisAlignment.start` en el `Row` del preview evita que las dos caras se desalineen cuando una es más alta que la otra.
+  - `helperText`en ambos campos explica la sintaxis de delimitadores sin ser invasivo.
+
+- `study_screen.dart`:
+  - `_CardFace` ahora usa `Column` con `Expanded > Center > SingleChildScrollView > MathText` - esto permite que una matriz 6x6 se desplace verticalmente sin romper el layout del swipper.
+  - `fontSize` bajó de 24 a 22 para dar más margen a contenido matemático denso.
+
+- `pubspec.yaml`: agregado `flutter_math_fork: ^0.7.4` como dependencia del proyecto.
+
+### Removed
+
+### Fixed
+
 ## [1.1.2] Bug Fixes - 2026-4-13
 
 ---

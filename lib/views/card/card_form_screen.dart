@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/card.dart';
 import '../../providers/card_provider.dart';
+import '../widgets/math_text.dart';
 
 class CardFormScreen extends StatefulWidget {
   const CardFormScreen({super.key, required this.deckId, this.card});
@@ -48,19 +49,21 @@ class _CardFormScreenState extends State<CardFormScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Vista previa tipo tarjeta
               _CardPreview(front: _frontCtrl.text, back: _backCtrl.text),
               const SizedBox(height: 24),
               TextFormField(
                 controller: _frontCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Frente *',
-                  hintText: 'Ej: ¿Cuál es la capital de Francia?',
+                  hintText: 'Texto o LaTeX: \$\\frac{a}{b}\$ o \$\$...\$\$',
+                  helperText:
+                      'Usa \$...\$ para fórmulas inline y \$\$...\$\$ para display.',
+                  helperMaxLines: 2,
                   prefixIcon: Icon(Icons.flip_to_front),
                 ),
                 textCapitalization: TextCapitalization.sentences,
-                maxLines: 3,
-                onChanged: (_) => setState(() {}), // refresca preview
+                maxLines: 5,
+                onChanged: (_) => setState(() {}),
                 validator: (v) => (v == null || v.trim().isEmpty)
                     ? 'El frente es obligatorio'
                     : null,
@@ -70,12 +73,15 @@ class _CardFormScreenState extends State<CardFormScreen> {
                 controller: _backCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Dorso *',
-                  hintText: 'Ej: París',
+                  hintText: 'Texto o LaTeX: \$\\frac{a}{b}\$ o \$\$...\$\$',
+                  helperText:
+                      'Usa \$...\$ para fórmulas inline y \$\$...\$\$ para display.',
+                  helperMaxLines: 2,
                   prefixIcon: Icon(Icons.flip_to_back),
                 ),
                 textCapitalization: TextCapitalization.sentences,
-                maxLines: 3,
-                onChanged: (_) => setState(() {}), // refresca preview
+                maxLines: 5,
+                onChanged: (_) => setState(() {}),
                 validator: (v) => (v == null || v.trim().isEmpty)
                     ? 'El dorso es obligatorio'
                     : null,
@@ -159,6 +165,7 @@ class _CardPreview extends StatelessWidget {
         border: Border.all(color: colorScheme.outlineVariant),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: _PreviewSide(
@@ -167,7 +174,10 @@ class _CardPreview extends StatelessWidget {
               color: colorScheme.primaryContainer,
             ),
           ),
-          const Icon(Icons.arrow_forward, size: 20),
+          const Padding(
+            padding: EdgeInsets.only(top: 32),
+            child: Icon(Icons.arrow_forward, size: 20),
+          ),
           Expanded(
             child: _PreviewSide(
               label: 'RESPUESTA',
@@ -207,12 +217,19 @@ class _PreviewSide extends StatelessWidget {
             label,
             style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 4),
-          Text(
-            text,
-            style: const TextStyle(fontSize: 13),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
+          const SizedBox(height: 6),
+          // La altura máxima acota el preview; el contenido se recorta si es
+          // muy grande (matrices extensas se verán completas en study_screen).
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 120),
+            child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              child: MathText(
+                text,
+                textStyle: const TextStyle(fontSize: 12),
+                textAlign: TextAlign.start,
+              ),
+            ),
           ),
         ],
       ),
