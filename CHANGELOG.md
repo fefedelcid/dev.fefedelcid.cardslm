@@ -16,6 +16,9 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/).
 - Agregado `MathText` (nuevo en `lib/views/widgets`):
   - Parser con regex `\$\$(.+?)\$\$|\$(.+?)\$` y `dotAll: true` - el flag es clave para que los saltos de línea dentro de `\begin{pmatrix}...\end{pmatrix}` sean capturados correctamente.
   - `onErrorFallback` loguea con `debugPrint` y muestra el LaTeX crudo en rojo itálico.
+- `study_screen.dart`:
+  - `AppBar`: nuevo `IconButton` rojo (`stop_circle_outlined`) visible solo cuando `!_isInitializing && !_isFinished`.
+  - Nuevo método `_confirmAbandon`: muestra el diálogo, llama `abandonSession()` y hace `Navigator.pop` — en este punto `startOrResumeSession()` ya fue ejecutado, garantizando que `_activeDeckId` apunta al deck correcto.
 
 ### Changed
 
@@ -30,7 +33,14 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 - `pubspec.yaml`: agregado `flutter_math_fork: ^0.7.4` como dependencia del proyecto.
 
+- `card_list_screen.dart`:
+  - `AppBar`: el botón ahora solo muestra `Icons.school` (Estudiar) cuando no hay sesión; el estado con sesión activa ya no tiene icono de abandon.
+
 ### Removed
+
+- `card_list_screen.dart`:
+  - `_ActiveSessionBanner`: eliminado `onAbandon` del constructor, el parámetro y su campo — era requerido pero nunca se usaba en `build`.
+  - Eliminado el método `_confirmAbandon`.
 
 ### Fixed
 

@@ -51,19 +51,12 @@ class _CardListScreenState extends State<CardListScreen> {
               tooltip: 'Importar CSV',
               onPressed: () => _importCsv(context),
             ),
-          if (cardProvider.cards.isNotEmpty)
-            hasProgress
-                ? IconButton(
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    tooltip: 'Abandonar sesión',
-                    color: Colors.red,
-                    onPressed: () => _confirmAbandon(context),
-                  )
-                : IconButton(
-                    icon: const Icon(Icons.school),
-                    tooltip: 'Estudiar',
-                    onPressed: () => _startStudy(context),
-                  ),
+          if (cardProvider.cards.isNotEmpty && !hasProgress)
+            IconButton(
+              icon: const Icon(Icons.school),
+              tooltip: 'Estudiar',
+              onPressed: () => _startStudy(context),
+            ),
         ],
       ),
       body: _buildBody(context, cardProvider, hasProgress),
@@ -136,7 +129,6 @@ class _CardListScreenState extends State<CardListScreen> {
             misses: sp.missesFor(deckId),
             total: provider.cards.length,
             onResume: () => _startStudy(context),
-            onAbandon: () => _confirmAbandon(context),
           )
         else
           _StudyBanner(
@@ -170,32 +162,6 @@ class _CardListScreenState extends State<CardListScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => StudyScreen(deck: widget.deck, cards: cards),
-      ),
-    );
-  }
-
-  void _confirmAbandon(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Abandonar sesión'),
-        content: const Text(
-          'El progreso de esta sesión se perderá. ¿Deseas abandonar?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              context.read<SessionProvider>().abandonSession();
-              Navigator.pop(ctx);
-            },
-            child: const Text('Abandonar'),
-          ),
-        ],
       ),
     );
   }
@@ -238,13 +204,11 @@ class _ActiveSessionBanner extends StatelessWidget {
     required this.misses,
     required this.total,
     required this.onResume,
-    required this.onAbandon,
   });
   final int hits;
   final int misses;
   final int total;
   final VoidCallback onResume;
-  final VoidCallback onAbandon;
 
   @override
   Widget build(BuildContext context) {

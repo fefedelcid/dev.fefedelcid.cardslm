@@ -72,6 +72,13 @@ class _StudyScreenState extends State<StudyScreen> {
       appBar: AppBar(
         title: Text(widget.deck.name),
         actions: [
+          if (!_isInitializing && !_isFinished)
+            IconButton(
+              icon: const Icon(Icons.stop_circle_outlined),
+              tooltip: 'Abandonar sesión',
+              color: Colors.red,
+              onPressed: () => _confirmAbandon(context),
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: _SessionCounter(hits: _hits, misses: _misses),
@@ -247,6 +254,33 @@ class _StudyScreenState extends State<StudyScreen> {
       total: widget.cards.length,
     );
     setState(() => _isFinished = true);
+  }
+
+  Future<void> _confirmAbandon(BuildContext context) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Abandonar sesión'),
+        content: const Text(
+          'El progreso de esta sesión se perderá. ¿Deseas abandonar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Abandonar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar == true && mounted) {
+      await context.read<SessionProvider>().abandonSession();
+      if (mounted) Navigator.pop(context);
+    }
   }
 
   Future<void> _restartSession() async {

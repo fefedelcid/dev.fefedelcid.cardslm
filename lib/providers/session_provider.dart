@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/study_session.dart';
 import '../models/study_progress.dart';
 import '../services/database_service.dart';
+import '../utils/app_logger.dart';
 
 class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _db = DatabaseService();
@@ -54,10 +55,22 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// Inicia o reanuda la sesión para [deckId].
   /// Si había otro deck activo, guarda su progreso antes de cambiar.
   Future<void> startOrResumeSession(int deckId) async {
-    if (_activeDeckId == deckId) return;
+    AppLogger.session(
+      'startOrResumeSession → deckId=$deckId, activeDeckId=$_activeDeckId',
+    );
+
+    if (_activeDeckId == deckId) {
+      AppLogger.session(
+        'startOrResumeSession → mismo deck activo, sin cambios',
+      );
+      return;
+    }
 
     // Guardar progreso del deck anterior (Bug #1).
     if (_activeDeckId != null) {
+      AppLogger.session(
+        'startOrResumeSession → guardando progreso de deck anterior (id=$_activeDeckId, index=$_currentIndex)',
+      );
       await _persistProgress();
     }
 
@@ -70,10 +83,16 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
       _currentHits = saved.correctCount;
       _currentMisses = saved.incorrectCount;
       _currentIndex = saved.currentIndex;
+      AppLogger.session(
+        'startOrResumeSession → progreso restaurado: index=$_currentIndex, hits=$_currentHits, misses=$_currentMisses',
+      );
     } else {
       _currentHits = 0;
       _currentMisses = 0;
       _currentIndex = 0;
+      AppLogger.session(
+        'startOrResumeSession → sin progreso previo, sesión nueva',
+      );
     }
 
     notifyListeners();
@@ -82,10 +101,19 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// Consulta la DB para saber si [deckId] tiene progreso guardado.
   /// Llamar desde initState de CardListScreen para mostrar el banner correcto.
   Future<void> checkSavedProgress(int deckId) async {
-    if (isSessionActive(deckId)) return; // ya está en memoria, no hace falta
+    if (isSessionActive(deckId)) {
+      AppLogger.session(
+        'checkSavedProgress → deckId=$deckId ya activo en memoria, skip',
+      );
+      return;
+    }
 
     final progress = await _db.getProgressByDeckId(deckId);
     _progressCache[deckId] = progress;
+    AppLogger.session(
+      'checkSavedProgress → deckId=$deckId, encontrado=${progress != null}'
+      '${progress != null ? " (index=${progress.currentIndex}, hits=${progress.correctCount}, misses=${progress.incorrectCount})" : ""}',
+    );
     notifyListeners();
   }
 
@@ -94,6 +122,9 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
     _currentHits = hits;
     _currentMisses = misses;
     _currentIndex = index;
+    AppLogger.session(
+      'updateProgress → deckId=$_activeDeckId, index=$index, hits=$hits, misses=$misses',
+    );
     notifyListeners();
     _persistProgress();
   }
@@ -105,6 +136,10 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
     required int misses,
     required int total,
   }) async {
+    AppLogger.session(
+      'completeSession → deckId=$deckId, hits=$hits, misses=$misses, total=$total',
+    );
+
     final session = StudySession(
       deckId: deckId,
       hits: hits,
@@ -127,11 +162,21 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Abandona la sesión sin guardar en historial. Borra el progreso parcial.
   Future<void> abandonSession() async {
+    AppLogger.session('abandonSession → activeDeckId=$_activeDeckId');
+
     final deckId = _activeDeckId;
     if (deckId != null) {
       await _db.deleteProgress(deckId);
       _progressCache[deckId] = null;
+      AppLogger.session(
+        'abandonSession → progreso de deckId=$deckId eliminado de DB',
+      );
+    } else {
+      AppLogger.session(
+        'abandonSession → sin sesión activa, nada que eliminar',
+      );
     }
+
     _activeDeckId = null;
     _currentHits = 0;
     _currentMisses = 0;
@@ -148,6 +193,7 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       _sessions = [];
       _hasAnySessions = false;
+      AppLogger.error('loadSessions', e);
     }
     notifyListeners();
   }
@@ -165,6 +211,9 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
+      AppLogger.session(
+        'didChangeAppLifecycleState → $state, persistiendo progreso',
+      );
       _persistProgress();
     }
   }
@@ -185,6 +234,9 @@ class SessionProvider extends ChangeNotifier with WidgetsBindingObserver {
       correctCount: _currentHits,
       incorrectCount: _currentMisses,
       updatedAt: DateTime.now(),
+    );
+    AppLogger.db(
+      'upsertProgress → deckId=$_activeDeckId, index=$_currentIndex, hits=$_currentHits, misses=$_currentMisses',
     );
     await _db.upsertProgress(progress);
   }
