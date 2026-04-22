@@ -9,6 +9,30 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.1.4] Teclado LaTeX - 2026-4-22
+
+### Added
+
+- Agregado widget `latex_keyboard.dart`:
+  - Nuevo widget `LatexKeyboard` — panel de inserción de símbolos LaTeX para campos de texto.
+  - Modelo interno `_Simbolo(etiqueta, latex, offsetDesdeFin)`: `offsetDesdeFin` posiciona el cursor dentro del primer argumento `{}` o `[]` tras la inserción (ej. `\frac{}{}` → cursor en el numerador).
+  - 5 categorías en tabs scrollables:
+    1. _Básico_ (fracciones, raíces, potencias, paréntesis extensibles)
+    2. _Griegos_ (α–Ω, mayúsculas y minúsculas)
+    3. _Operadores_ (∑ ∫ ∏ lim, funciones trigonométricas, entornos de matrices y cases)
+    4. _Relaciones_ (≠ ≤ ≥ ∈ ⊂ ∪ ∩ …)
+    5. _Flechas_ (→ ⇒ ⇔ ↦ …).
+  - `GridView` con `SliverGridDelegateWithMaxCrossAxisExtent` — los botones se adaptan a cualquier ancho de pantalla sin configuración manual.
+  - La inserción respeta la selección activa: reemplaza el texto seleccionado o inserta en la posición del cursor.
+
+- `card_form_screen.dart`:
+  - `FocusNode _focusFrente` y `FocusNode _focusDorso` con listeners que actualizan `_controladorActivo` al cambiar de campo.
+  - `bool _mostrarTeclado`: controla la visibilidad del panel.
+  - `IconButton(Icons.functions)` en el `AppBar` que togglea el teclado; el ícono se colorea con `colorScheme.primary` cuando está activo.
+  - Panel `LatexKeyboard` anclado al fondo del `Scaffold`, fuera del `SingleChildScrollView`, envuelto en `ExcludeFocus` para que los botones no roben el foco del campo activo.
+
+---
+
 ## [1.1.3] Renderizado y escritura LaTeX - 2026-4-13
 
 ### Added

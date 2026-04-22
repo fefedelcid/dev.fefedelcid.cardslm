@@ -1,14 +1,19 @@
+// lib/views/card_form_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
-import '../../models/card.dart';
+import '../../models/card.dart' as model;
 import '../../providers/card_provider.dart';
 import '../widgets/math_text.dart';
+import '../widgets/latex_keyboard.dart';
 
 class CardFormScreen extends StatefulWidget {
-  const CardFormScreen({super.key, required this.deckId, this.card});
   final int deckId;
-  final FlashCard? card;
+
+  /// `null` → crear nueva tarjeta. Non-null → editar tarjeta existente.
+  final model.FlashCard? card;
+
+  const CardFormScreen({super.key, required this.deckId, this.card});
 
   @override
   State<CardFormScreen> createState() => _CardFormScreenState();
@@ -16,223 +21,289 @@ class CardFormScreen extends StatefulWidget {
 
 class _CardFormScreenState extends State<CardFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _frontCtrl;
-  late final TextEditingController _backCtrl;
-  bool _isSaving = false;
 
-  bool get _isEditing => widget.card != null;
+  late final TextEditingController _ctrlFrente;
+  late final TextEditingController _ctrlDorso;
+  late final FocusNode _focusFrente;
+  late final FocusNode _focusDorso;
+
+  /// Controlador del campo actualmente enfocado; se pasa al teclado LaTeX.
+  /// Por defecto apunta al frente hasta que el usuario enfoque otro campo.
+  TextEditingController? _controladorActivo;
+
+  bool _mostrarTeclado = false;
+  bool _guardando = false;
+
+  // ---------------------------------------------------------------------------
+  // Ciclo de vida
+  // ---------------------------------------------------------------------------
 
   @override
   void initState() {
     super.initState();
-    _frontCtrl = TextEditingController(text: widget.card?.front ?? '');
-    _backCtrl = TextEditingController(text: widget.card?.back ?? '');
+
+    _ctrlFrente = TextEditingController(text: widget.card?.front ?? '');
+    _ctrlDorso = TextEditingController(text: widget.card?.back ?? '');
+    _focusFrente = FocusNode();
+    _focusDorso = FocusNode();
+
+    _controladorActivo = _ctrlFrente;
+
+    // Actualizar el controlador activo cuando el usuario cambia de campo.
+    _focusFrente.addListener(() {
+      if (_focusFrente.hasFocus) {
+        setState(() => _controladorActivo = _ctrlFrente);
+      }
+    });
+    _focusDorso.addListener(() {
+      if (_focusDorso.hasFocus) setState(() => _controladorActivo = _ctrlDorso);
+    });
   }
 
   @override
   void dispose() {
-    _frontCtrl.dispose();
-    _backCtrl.dispose();
+    _ctrlFrente.dispose();
+    _ctrlDorso.dispose();
+    _focusFrente.dispose();
+    _focusDorso.dispose();
     super.dispose();
   }
 
+  // ---------------------------------------------------------------------------
+  // Acción de guardado
+  // ---------------------------------------------------------------------------
+
+  Future<void> _guardar() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _guardando = true);
+
+    try {
+      final provider = context.read<CardProvider>();
+      if (widget.card == null) {
+        await provider.addCard(
+          model.FlashCard(
+            id: 0,
+            deckId: widget.deckId,
+            front: _ctrlFrente.text.trim(),
+            back: _ctrlDorso.text.trim(),
+          ),
+        );
+      } else {
+        await provider.updateCard(
+          model.FlashCard(
+            id: widget.card!.id,
+            deckId: widget.deckId,
+            front: _ctrlFrente.text.trim(),
+            back: _ctrlDorso.text.trim(),
+          ),
+        );
+      }
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      debugPrint('Error al guardar tarjeta: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al guardar la tarjeta')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _guardando = false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
+    final esEdicion = widget.card != null;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? 'Editar tarjeta' : 'Nueva tarjeta'),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _CardPreview(front: _frontCtrl.text, back: _backCtrl.text),
-              const SizedBox(height: 24),
-              TextFormField(
-                controller: _frontCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Frente *',
-                  hintText: 'Texto o LaTeX: \$\\frac{a}{b}\$ o \$\$...\$\$',
-                  helperText:
-                      'Usa \$...\$ para fórmulas inline y \$\$...\$\$ para display.',
-                  helperMaxLines: 2,
-                  prefixIcon: Icon(Icons.flip_to_front),
-                ),
-                textCapitalization: TextCapitalization.sentences,
-                maxLines: 5,
-                onChanged: (_) => setState(() {}),
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'El frente es obligatorio'
-                    : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _backCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Dorso *',
-                  hintText: 'Texto o LaTeX: \$\\frac{a}{b}\$ o \$\$...\$\$',
-                  helperText:
-                      'Usa \$...\$ para fórmulas inline y \$\$...\$\$ para display.',
-                  helperMaxLines: 2,
-                  prefixIcon: Icon(Icons.flip_to_back),
-                ),
-                textCapitalization: TextCapitalization.sentences,
-                maxLines: 5,
-                onChanged: (_) => setState(() {}),
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'El dorso es obligatorio'
-                    : null,
-              ),
-              const SizedBox(height: 32),
-              FilledButton.icon(
-                onPressed: _isSaving ? null : _submit,
-                icon: _isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.save),
-                label: Text(_isEditing ? 'Guardar cambios' : 'Crear tarjeta'),
-              ),
-            ],
+        title: Text(esEdicion ? 'Editar tarjeta' : 'Nueva tarjeta'),
+        actions: [
+          // ── Toggle teclado LaTeX ─────────────────────────────────────────
+          IconButton(
+            tooltip: _mostrarTeclado
+                ? 'Ocultar teclado LaTeX'
+                : 'Teclado LaTeX',
+            icon: Icon(
+              Icons.functions,
+              // El ícono se colorea con el color primario cuando está activo.
+              color: _mostrarTeclado
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+            onPressed: () => setState(() => _mostrarTeclado = !_mostrarTeclado),
           ),
-        ),
+          // ── Guardar ──────────────────────────────────────────────────────
+          IconButton(
+            tooltip: 'Guardar',
+            icon: _guardando
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check),
+            onPressed: _guardando ? null : _guardar,
+          ),
+        ],
       ),
-    );
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isSaving = true);
-    final provider = context.read<CardProvider>();
-
-    if (_isEditing) {
-      await provider.updateCard(
-        widget.card!.copyWith(
-          front: _frontCtrl.text.trim(),
-          back: _backCtrl.text.trim(),
-        ),
-      );
-    } else {
-      await provider.addCard(
-        FlashCard(
-          deckId: widget.deckId,
-          front: _frontCtrl.text.trim(),
-          back: _backCtrl.text.trim(),
-        ),
-      );
-    }
-
-    if (!mounted) return;
-
-    if (provider.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(provider.error!), backgroundColor: Colors.red),
-      );
-      provider.clearError();
-    } else {
-      Navigator.pop(context);
-    }
-
-    setState(() => _isSaving = false);
-  }
-}
-
-// ── Vista previa de la tarjeta ─────────────────────────
-
-class _CardPreview extends StatelessWidget {
-  const _CardPreview({required this.front, required this.back});
-  final String front;
-  final String back;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.outlineVariant),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      // resizeToAvoidBottomInset: true (valor por defecto) — el Scaffold empuja
+      // el contenido hacia arriba cuando aparece el teclado del sistema.
+      body: Column(
         children: [
+          // ── Formulario (scrollable) ──────────────────────────────────────
           Expanded(
-            child: _PreviewSide(
-              label: 'PREGUNTA',
-              text: front.isEmpty ? '...' : front,
-              color: colorScheme.primaryContainer,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // ── Campo Frente ───────────────────────────────────────
+                    TextFormField(
+                      controller: _ctrlFrente,
+                      focusNode: _focusFrente,
+                      decoration: const InputDecoration(
+                        labelText: 'Frente',
+                        helperText:
+                            r'Usa $…$ para LaTeX en línea o $$…$$ para bloque',
+                        helperMaxLines: 2,
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: null,
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'El frente no puede estar vacío'
+                          : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── Campo Dorso ────────────────────────────────────────
+                    TextFormField(
+                      controller: _ctrlDorso,
+                      focusNode: _focusDorso,
+                      decoration: const InputDecoration(
+                        labelText: 'Dorso',
+                        helperText:
+                            r'Usa $…$ para LaTeX en línea o $$…$$ para bloque',
+                        helperMaxLines: 2,
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: null,
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'El dorso no puede estar vacío'
+                          : null,
+                    ),
+                    const SizedBox(height: 24),
+
+                    // ── Vista previa ───────────────────────────────────────
+                    Text(
+                      'Vista previa',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    AnimatedBuilder(
+                      animation: Listenable.merge([_ctrlFrente, _ctrlDorso]),
+                      builder: (_, _) => Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _PreviewSide(
+                              etiqueta: 'Frente',
+                              texto: _ctrlFrente.text,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _PreviewSide(
+                              etiqueta: 'Dorso',
+                              texto: _ctrlDorso.text,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Espacio extra para que el último elemento no quede
+                    // tapado por el teclado LaTeX cuando está abierto.
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.only(top: 32),
-            child: Icon(Icons.arrow_forward, size: 20),
-          ),
-          Expanded(
-            child: _PreviewSide(
-              label: 'RESPUESTA',
-              text: back.isEmpty ? '...' : back,
-              color: colorScheme.secondaryContainer,
+
+          // ── Teclado LaTeX (panel inferior, fuera del scroll) ─────────────
+          if (_mostrarTeclado)
+            // ExcludeFocus evita que los botones del teclado roben el foco
+            // del campo de texto activo al ser pulsados.
+            ExcludeFocus(
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: Theme.of(context).dividerColor),
+                  ),
+                ),
+                child: LatexKeyboard(controlador: _controladorActivo),
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Vista previa de un lado de la tarjeta
+// ──────────────────────────────────────────────────────────────────────────────
+
 class _PreviewSide extends StatelessWidget {
-  const _PreviewSide({
-    required this.label,
-    required this.text,
-    required this.color,
-  });
-  final String label;
-  final String text;
-  final Color color;
+  final String etiqueta;
+  final String texto;
+
+  const _PreviewSide({required this.etiqueta, required this.texto});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(etiqueta, style: Theme.of(context).textTheme.labelSmall),
+        const SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            border: Border.all(color: Theme.of(context).dividerColor),
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(height: 6),
-          // La altura máxima acota el preview; el contenido se recorta si es
-          // muy grande (matrices extensas se verán completas en study_screen).
-          ConstrainedBox(
+          child: ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 120),
             child: SingleChildScrollView(
               physics: const NeverScrollableScrollPhysics(),
-              child: MathText(
-                text,
-                textStyle: const TextStyle(fontSize: 12),
-                textAlign: TextAlign.start,
-              ),
+              child: texto.trim().isEmpty
+                  ? Text(
+                      'Sin contenido',
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontStyle: FontStyle.italic,
+                        fontSize: 13,
+                      ),
+                    )
+                  : MathText(texto),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
