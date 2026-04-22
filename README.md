@@ -1,43 +1,45 @@
-# 🃏 FlashCards
+# 🃏 CardsLM
 
 > Estudia más inteligente, no más duro. Una app de tarjetas interactivas offline-first para Android.
 
 ![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter)
-![Dart](https://img.shields.io/badge/Dart-3.x-0175C2?style=flat-square&logo=dart)
+![Dart](https://img.shields.io/badge/Dart-%5E3.11.1-0175C2?style=flat-square&logo=dart)
 ![SQLite](https://img.shields.io/badge/SQLite-sqflite-003B57?style=flat-square&logo=sqlite)
-![Version](https://img.shields.io/badge/versión-1.1.2-brightgreen?style=flat-square)
+![Version](https://img.shields.io/badge/versión-1.1.4-brightgreen?style=flat-square)
 ![Platform](https://img.shields.io/badge/plataforma-Android-3DDC84?style=flat-square&logo=android)
 
 ---
 
 ## ¿Qué es esto?
 
-FlashCards es una app Android para crear mazos de tarjetas de estudio, repasar conceptos con flip & swipe, y llevar un historial de sesiones. Funciona **completamente offline**, sin cuentas, sin nube, sin ads molestos (todavía).
+CardsLM es una app Android para crear mazos de tarjetas de estudio, repasar conceptos con flip & swipe, y llevar un historial de sesiones. Funciona **completamente offline**, sin cuentas, sin nube, sin ads molestos (todavía).
 
 El código fue construido en colaboración estrecha con IA (**vibecodeado**, si quieres llamarle así), pero detrás hay decisiones de arquitectura reales, un modelo de datos normalizado, migraciones de BD versionadas y lógica de negocio pensada para escalar. No es spaghetti que funciona de casualidad.
 
 ---
 
-## Funcionalidades actuales (`v1.1.2`)
+## Funcionalidades actuales (`v1.1.4`)
 
 - 📚 **CRUD de Mazos y Tarjetas** — crea, edita y elimina decks y cards
 - 📥 **Importación masiva desde CSV** — sube cientos de tarjetas en segundos
 - 🔄 **Sesión de estudio con flip + swipe** — voltea la tarjeta, desliza para acierto/error
 - 💾 **Reanudación de sesión** — cierra la app, vuelve y sigue donde quedaste
 - 📊 **Historial de sesiones** — revisa tu precisión, aciertos y errores por sesión
+- 📐 **Soporte LaTeX** — renderizado de fórmulas matemáticas con teclado de símbolos integrado
 - 🔒 **100% offline** — ni un solo byte sale del dispositivo
 
 ---
 
 ## Stack
 
-| Capa           | Tecnología                          |
-| -------------- | ----------------------------------- |
-| Framework      | Flutter / Dart                      |
-| Base de datos  | `sqflite` + `path_provider`         |
-| Estado         | `provider`                          |
-| Importación    | `file_picker` + `csv`               |
-| UI de tarjetas | `flip_card` + `flutter_card_swiper` |
+| Capa                   | Tecnología                                        |
+| ---------------------- | ------------------------------------------------- |
+| Framework              | Flutter / Dart `^3.11.1`                          |
+| Base de datos          | `sqflite ^2.3.3` + `path_provider ^2.1.4`         |
+| Estado                 | `provider ^6.1.2`                                 |
+| Importación            | `file_picker ^8.1.4` + `csv ^6.0.0`               |
+| UI de tarjetas         | `flip_card ^0.7.0` + `flutter_card_swiper ^7.0.1` |
+| Renderizado matemático | `flutter_math_fork ^0.7.4`                        |
 
 ---
 
@@ -65,13 +67,13 @@ La base de datos está en **versión 2**, con migraciones encadenadas en `_onUpg
 
 - Flutter SDK `>=3.0.0`
 - Android SDK `>=21` (Android 5.0+)
-- Dart `>=3.0.0`
+- Dart `^3.11.1`
 
 ### Instalación
 
 ```bash
-git clone https://github.com/tu-usuario/flashcards.git
-cd flashcards
+git clone https://github.com/fefedelcid/dev.fefedelcid.cardslm.git
+cd cardslm
 flutter pub get
 flutter run
 ```
@@ -87,6 +89,15 @@ El archivo debe tener dos columnas: `front` y `back`. Sin encabezados especiales
 ```
 
 Desde la pantalla del mazo, tocá el ícono de importar y seleccioná tu archivo. El resto es automático.
+
+### Usar LaTeX en las tarjetas
+
+Las fórmulas se delimitan con `$...$` (inline) o `$$...$$` (bloque). El teclado de símbolos integrado está disponible desde el formulario de creación de tarjetas.
+
+```
+¿Cuál es la identidad de Euler?,$e^{i\pi} + 1 = 0$
+¿Área bajo la curva?,$\int_a^b f(x)\,dx$
+```
 
 ---
 
